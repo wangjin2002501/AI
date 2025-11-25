@@ -1,0 +1,7 @@
+{
+  "name": "NatureLens AI",
+  "description": "智能植物识别应用，能够识别花草树木并提供详细介绍。包含特殊的人像识别彩蛋。",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
