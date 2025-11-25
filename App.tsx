@@ -16,33 +16,90 @@ const App: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Helper function to compress and resize image
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Max dimension (1024px is plenty for AI)
+          const MAX_SIZE = 1024;
+          
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error("Could not get canvas context"));
+            return;
+          }
+          
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Export as JPEG with 0.7 quality (good balance)
+          // This fixes HEIC issues and huge file sizes on mobile
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          resolve(dataUrl);
+        };
+        img.onerror = (err) => reject(new Error("Failed to load image for compression"));
+      };
+      reader.onerror = (err) => reject(new Error("Failed to read file"));
+    });
+  };
+
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setError(null);
     setResult(null);
+    setLoading(true); // Start loading immediately for compression
     
-    // Create preview URL
-    const previewUrl = URL.createObjectURL(file);
-
-    // Convert to Base64
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      setImageState({ file, previewUrl, base64 });
-      processImage(base64);
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Create preview URL immediately for UI
+      const previewUrl = URL.createObjectURL(file);
+      
+      // Compress image
+      const compressedBase64 = await compressImage(file);
+      
+      setImageState({ file, previewUrl, base64: compressedBase64 });
+      
+      // Send to AI
+      await processImage(compressedBase64);
+    } catch (err: any) {
+      console.error("Image processing error:", err);
+      setError("图片处理失败，请重试（可能是图片格式不支持）");
+      setLoading(false);
+    }
   };
 
   const processImage = async (base64Data: string) => {
-    setLoading(true);
+    // Note: loading is already true from handleFileChange
     try {
       const analysisResult = await identifyImage(base64Data);
       setResult(analysisResult);
     } catch (err: any) {
-      setError(err.message || '识别过程中发生未知错误');
+      console.error(err);
+      setError(err.message || '识别过程中发生未知错误，请检查网络或重试');
     } finally {
       setLoading(false);
     }

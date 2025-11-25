@@ -9,8 +9,11 @@ const MODEL_NAME = "gemini-2.5-flash";
 
 export const identifyImage = async (base64Image: string): Promise<IdentificationResult> => {
   try {
-    // Strip the data URL prefix if present (e.g., "data:image/jpeg;base64,")
-    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+    // Clean the base64 string. 
+    // App.tsx now guarantees 'image/jpeg', but we strip the header just in case.
+    const base64Data = base64Image.includes('base64,') 
+      ? base64Image.split('base64,')[1] 
+      : base64Image;
 
     const prompt = `
       Analyze this image strictly.
@@ -25,6 +28,7 @@ export const identifyImage = async (base64Image: string): Promise<Identification
         parts: [
           {
             inlineData: {
+              // App.tsx converts everything to image/jpeg before sending
               mimeType: "image/jpeg",
               data: base64Data,
             },
@@ -84,6 +88,6 @@ export const identifyImage = async (base64Image: string): Promise<Identification
 
   } catch (error) {
     console.error("Gemini API Error:", error);
-    throw new Error("识别失败，请稍后重试。");
+    throw new Error("识别失败，请检查网络或稍后重试。");
   }
 };
