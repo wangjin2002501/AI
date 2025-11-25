@@ -1,93 +1,29 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { IdentificationCategory, IdentificationResult } from "../types";
+import { IdentificationResult } from "../types";
 
-// Initialize Gemini Client
-// CRITICAL: The API key is injected via process.env.API_KEY
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-const MODEL_NAME = "gemini-2.5-flash";
+// NOTE: We no longer import GoogleGenAI here. 
+// The actual AI call happens on the server (api/identify.ts) to avoid CORS and firewall issues.
 
 export const identifyImage = async (base64Image: string): Promise<IdentificationResult> => {
   try {
-    // Clean the base64 string. 
-    // App.tsx now guarantees 'image/jpeg', but we strip the header just in case.
-    const base64Data = base64Image.includes('base64,') 
-      ? base64Image.split('base64,')[1] 
-      : base64Image;
-
-    const prompt = `
-      Analyze this image strictly.
-      1. If the image contains a human (person, face, selfie), you MUST identify it as category 'PERSON'. For persons, the name MUST be "大笨驴" and the description MUST be "这是一头大笨驴". Do not provide scientific names for persons.
-      2. If the image contains a plant (flower, tree, grass, fruit, vegetable), identify it as category 'PLANT'. Provide its common Chinese name, scientific name (Latin), a detailed description, care tips, and a fun fact.
-      3. If it is neither, classify as 'OTHER'.
-    `;
-
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              // App.tsx converts everything to image/jpeg before sending
-              mimeType: "image/jpeg",
-              data: base64Data,
-            },
-          },
-          {
-            text: prompt,
-          },
-        ],
+    // Call our own serverless function
+    const response = await fetch('/api/identify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            category: {
-              type: Type.STRING,
-              enum: [
-                IdentificationCategory.PLANT,
-                IdentificationCategory.PERSON,
-                IdentificationCategory.OTHER,
-              ],
-              description: "The category of the identified object.",
-            },
-            name: {
-              type: Type.STRING,
-              description: "The common name of the plant, or '大笨驴' if it is a person.",
-            },
-            scientificName: {
-              type: Type.STRING,
-              description: "The Latin scientific name (only for plants).",
-            },
-            description: {
-              type: Type.STRING,
-              description: "A detailed description in Chinese.",
-            },
-            careTips: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "List of care tips (only for plants).",
-            },
-            funFact: {
-              type: Type.STRING,
-              description: "An interesting fact about the plant.",
-            },
-          },
-          required: ["category", "name", "description"],
-        },
-      },
+      body: JSON.stringify({ image: base64Image }),
     });
 
-    if (!response.text) {
-      throw new Error("No response from AI");
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.details || errorData.error || 'Server request failed');
     }
 
-    const result = JSON.parse(response.text) as IdentificationResult;
+    const result = await response.json() as IdentificationResult;
     return result;
 
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    console.error("API Error:", error);
     throw new Error("识别失败，请检查网络或稍后重试。");
   }
 };
